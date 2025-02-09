@@ -8,6 +8,7 @@ import (
 	"compress/bzip2"
 	"embed"
 	"encoding/gob"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -119,10 +120,69 @@ func (s Set) Calculate() {
 			}
 		}
 	}
-
 }
 
+var (
+	FlagCheck = flag.String("check", "", "check a model")
+)
+
 func main() {
+	flag.Parse()
+
+	if *FlagCheck != "" {
+		fmt.Println("checking...")
+		total := float32(0.0)
+		var set Set
+		input, err := os.Open(*FlagCheck)
+		if err != nil {
+			panic(err)
+		}
+		decoder := gob.NewDecoder(input)
+		err = decoder.Decode(&set)
+		if err != nil {
+			panic(err)
+		}
+		for i := range set {
+			if set[i].Count == 0 {
+				continue
+			}
+			a := NewMatrix(256, 256)
+			for r := 0; r < a.Rows; r++ {
+				for c := 0; c < a.Cols; c++ {
+					a.Data = append(a.Data, set[i].A[r][c])
+				}
+			}
+			ai := NewMatrix(256, 256)
+			for r := 0; r < ai.Rows; r++ {
+				for c := 0; c < ai.Cols; c++ {
+					ai.Data = append(ai.Data, set[i].AI[r][c])
+				}
+			}
+			ii := NewMatrix(256, 256)
+			for r := 0; r < ii.Rows; r++ {
+				for c := 0; c < ii.Cols; c++ {
+					if r == c {
+						ii.Data = append(ii.Data, 1)
+					} else {
+						ii.Data = append(ii.Data, 0)
+					}
+				}
+			}
+			diff := ai.MulT(a).Sub(ii)
+			sum := float32(0.0)
+			for _, v := range diff.Data {
+				if v < 0 {
+					v = -v
+				}
+				sum += v
+			}
+			fmt.Println(i, sum/float32(diff.Rows*diff.Cols))
+			total += sum / float32(diff.Rows*diff.Cols)
+		}
+		fmt.Println("total", total)
+		return
+	}
+
 	rng := rand.New(rand.NewSource(1))
 	statistics := make(Set, 256)
 	statistics.Calculate()

@@ -75,6 +75,24 @@ func (m Matrix) Add(n Matrix) Matrix {
 	return o
 }
 
+// Sub subtract two float32 matrices
+func (m Matrix) Sub(n Matrix) Matrix {
+	lena, lenb := len(m.Data), len(n.Data)
+	if lena%lenb != 0 {
+		panic(fmt.Errorf("%d %% %d != 0", lena, lenb))
+	}
+
+	o := Matrix{
+		Cols: m.Cols,
+		Rows: m.Rows,
+		Data: make([]float32, 0, m.Cols*m.Rows),
+	}
+	for i, value := range m.Data {
+		o.Data = append(o.Data, value-n.Data[i%lenb])
+	}
+	return o
+}
+
 // Softmax calculates the softmax of the matrix rows
 func (m Matrix) Softmax(T float32) Matrix {
 	output := NewMatrix(m.Cols, m.Rows)
