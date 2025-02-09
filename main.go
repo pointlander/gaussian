@@ -123,7 +123,12 @@ func (s Set) Calculate() {
 }
 
 var (
+	// FlagCheck checks the model
 	FlagCheck = flag.String("check", "", "check a model")
+	// FlagInfer infers text from a query
+	FlagInfer = flag.String("infer", "", "infer text based on a model")
+	// FlagQuery is the query
+	FlagQuery = flag.String("query", "What is the meaning of life?", "query")
 )
 
 func main() {
@@ -180,6 +185,60 @@ func main() {
 			total += sum / float32(diff.Rows*diff.Cols)
 		}
 		fmt.Println("total", total)
+		return
+	} else if *FlagInfer != "" {
+		var set Set
+		input, err := os.Open(*FlagInfer)
+		if err != nil {
+			panic(err)
+		}
+		decoder := gob.NewDecoder(input)
+		err = decoder.Decode(&set)
+		if err != nil {
+			panic(err)
+		}
+
+		m := NewMixer()
+		for _, v := range []byte(*FlagQuery) {
+			m.Add(v)
+		}
+
+		for s := 0; s < 33; s++ {
+			var vector [256]float32
+			m.Mix(&vector)
+			vec := NewMatrix(256, 1)
+			vec.Data = append(vec.Data, vector[:]...)
+			min, symbol := float32(math.MaxFloat32), 0
+			for i := range set {
+				if set[i].Count == 0 {
+					continue
+				}
+				u := NewMatrix(256, 1)
+				for _, v := range set[i].Average {
+					u.Data = append(u.Data, v)
+				}
+				ai := NewMatrix(256, 256)
+				for r := 0; r < ai.Rows; r++ {
+					for c := 0; c < ai.Cols; c++ {
+						ai.Data = append(ai.Data, set[i].AI[r][c])
+					}
+				}
+				diff := ai.MulT(vec.Sub(u))
+				sum := float32(0.0)
+				for _, v := range diff.Data {
+					if v < 0 {
+						v = -v
+					}
+					sum += v
+				}
+				if sum < min {
+					min, symbol = sum, i
+				}
+			}
+			fmt.Println(min, symbol)
+			fmt.Printf("%c\n", byte(symbol))
+			m.Add(byte(symbol))
+		}
 		return
 	}
 
