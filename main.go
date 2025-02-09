@@ -306,39 +306,6 @@ func main() {
 		}
 
 		{
-			set := tf32.NewSet()
-			set.Add("AI", 256, 256)
-			AI := set.ByName["AI"]
-			for i := range stats.A {
-				for j := range stats.A[i] {
-					AI.X = append(AI.X, stats.A[i][j])
-				}
-			}
-			AI.States = make([][]float32, StateTotal)
-			for i := range AI.States {
-				AI.States[i] = make([]float32, len(AI.X))
-			}
-
-			/*for i := range set.Weights {
-				w := set.Weights[i]
-				if strings.HasPrefix(w.N, "b") {
-					w.X = w.X[:cap(w.X)]
-					w.States = make([][]float32, StateTotal)
-					for i := range w.States {
-						w.States[i] = make([]float32, len(w.X))
-					}
-					continue
-				}
-				factor := math.Sqrt(2.0 / float64(w.S[0]))
-				for i := 0; i < cap(w.X); i++ {
-					w.X = append(w.X, float32(rng.NormFloat64()*factor))
-				}
-				w.States = make([][]float32, StateTotal)
-				for i := range w.States {
-					w.States[i] = make([]float32, len(w.X))
-				}
-			}*/
-
 			others := tf32.NewSet()
 			others.Add("A", 256, 256)
 			others.Add("I", 256, 256)
@@ -354,6 +321,43 @@ func main() {
 					}
 				}
 			}
+
+			min, best := float32(math.MaxFloat32), tf32.Set{}
+			for t := 0; t < 32; t++ {
+				set := tf32.NewSet()
+				set.Add("AI", 256, 256)
+				for i := range set.Weights {
+					w := set.Weights[i]
+					if strings.HasPrefix(w.N, "b") {
+						w.X = w.X[:cap(w.X)]
+						w.States = make([][]float32, StateTotal)
+						for i := range w.States {
+							w.States[i] = make([]float32, len(w.X))
+						}
+						continue
+					}
+					factor := math.Sqrt(2.0 / float64(w.S[0]))
+					for i := 0; i < cap(w.X); i++ {
+						w.X = append(w.X, float32(rng.NormFloat64()*factor))
+					}
+					w.States = make([][]float32, StateTotal)
+					for i := range w.States {
+						w.States[i] = make([]float32, len(w.X))
+					}
+				}
+
+				loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("AI"), others.Get("A"))))
+
+				set.Zero()
+				others.Zero()
+				cost := tf32.Gradient(loss).X[0]
+
+				if cost < min {
+					min, best = cost, set
+				}
+			}
+
+			set := best
 
 			loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("AI"), others.Get("A"))))
 
