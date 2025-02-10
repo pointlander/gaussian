@@ -182,3 +182,9 @@ func SelfAttention(input Matrix, output *[256]float32) {
 		}
 	}
 }
+
+// CS is float32 cosine similarity
+func CS(a []float32, b []float32) float32 {
+	aa, bb, ab := vector.Dot(a, a), vector.Dot(b, b), vector.Dot(a, b)
+	return ab / (sqrt(aa) * sqrt(bb))
+}
