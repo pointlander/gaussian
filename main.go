@@ -18,7 +18,7 @@ import (
 
 	"github.com/pointlander/gradient/tf32"
 
-	"github.com/alixaxel/pagerank"
+	//"github.com/alixaxel/pagerank"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -243,7 +243,7 @@ func main() {
 		}
 		return
 	} else if *FlagInfers != "" {
-		//rng := rand.New(rand.NewSource(1))
+		rng := rand.New(rand.NewSource(1))
 
 		var set Set
 		input, err := os.Open(*FlagInfers)
@@ -287,8 +287,10 @@ func main() {
 						vec.Data = append(vec.Data, float32(rng.NormFloat64()))
 					}
 					vectors[j] = a.MulT(vec).Add(u)
+					cs := CS(vector[:], vectors[j].Data)
+					samples[i] += cs
 				}
-				graph := pagerank.NewGraph()
+				/*graph := pagerank.NewGraph()
 				for a := range vectors {
 					for b := range vectors {
 						cs := CS(vectors[a].Data, vectors[b].Data)
@@ -310,9 +312,10 @@ func main() {
 				graph.Rank(.8, 1e-3, func(node uint32, rank float64) {
 					ranks[node] = float32(rank)
 				})
-				samples[i] = ranks[32]
+				samples[i] = ranks[32]*/
+
 			}
-			/*sum := float32(0.0)
+			sum := float32(0.0)
 			for _, v := range samples {
 				sum += v
 			}
@@ -326,13 +329,13 @@ func main() {
 					symbol = i
 					break
 				}
-			}*/
-			max, symbol := float32(0.0), 0
+			}
+			/*max, symbol := float32(0.0), 0
 			for i, v := range samples {
 				if v > max {
 					max, symbol = v, i
 				}
-			}
+			}*/
 			fmt.Printf("%d %c\n", symbol, byte(symbol))
 			m.Add(byte(symbol))
 		}
