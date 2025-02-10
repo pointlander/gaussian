@@ -264,7 +264,7 @@ func main() {
 			var samples [256]float32
 			var vector [256]float32
 			m.Mix(&vector)
-			for i := range set {
+			for i := range set[:128] {
 				if set[i].Count == 0 {
 					continue
 				}
