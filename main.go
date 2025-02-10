@@ -235,8 +235,7 @@ func main() {
 					min, symbol = sum, i
 				}
 			}
-			fmt.Println(min, symbol)
-			fmt.Printf("%c\n", byte(symbol))
+			fmt.Printf("%f %d %c\n", min, symbol, byte(symbol))
 			m.Add(byte(symbol))
 		}
 		return
