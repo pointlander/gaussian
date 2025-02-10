@@ -127,6 +127,8 @@ var (
 	FlagCheck = flag.String("check", "", "check a model")
 	// FlagInfer infers text from a query
 	FlagInfer = flag.String("infer", "", "infer text based on a model")
+	// FlagInfers sample based infer
+	FlagInfers = flag.String("infers", "", "infer text based on a model using samples")
 	// FlagQuery is the query
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query")
 )
@@ -236,6 +238,71 @@ func main() {
 				}
 			}
 			fmt.Printf("%f %d %c\n", min, symbol, byte(symbol))
+			m.Add(byte(symbol))
+		}
+		return
+	} else if *FlagInfers != "" {
+		rng := rand.New(rand.NewSource(1))
+
+		var set Set
+		input, err := os.Open(*FlagInfers)
+		if err != nil {
+			panic(err)
+		}
+		decoder := gob.NewDecoder(input)
+		err = decoder.Decode(&set)
+		if err != nil {
+			panic(err)
+		}
+
+		m := NewMixer()
+		for _, v := range []byte(*FlagQuery) {
+			m.Add(v)
+		}
+
+		for s := 0; s < 33; s++ {
+			var samples [256]float32
+			var vector [256]float32
+			m.Mix(&vector)
+			for i := range set {
+				if set[i].Count == 0 {
+					continue
+				}
+				u := NewMatrix(256, 1)
+				for _, v := range set[i].Average {
+					u.Data = append(u.Data, v)
+				}
+				a := NewMatrix(256, 256)
+				for r := 0; r < a.Rows; r++ {
+					for c := 0; c < a.Cols; c++ {
+						a.Data = append(a.Data, set[i].A[r][c])
+					}
+				}
+				for j := 0; j < 512; j++ {
+					vec := NewMatrix(256, 1)
+					for k := 0; k < vec.Cols; k++ {
+						vec.Data = append(vec.Data, float32(rng.NormFloat64()))
+					}
+					sample := a.MulT(vec).Add(u)
+					samples[i] += CS(vector[:], sample.Data)
+				}
+			}
+			sum := float32(0.0)
+			for _, v := range samples {
+				sum += v
+			}
+			total, selected, symbol := float32(0.0), rng.Float32(), 0
+			for i, v := range samples {
+				if v == 0 {
+					continue
+				}
+				total += v / sum
+				if selected < total {
+					symbol = i
+					break
+				}
+			}
+			fmt.Printf("%d %c\n", symbol, byte(symbol))
 			m.Add(byte(symbol))
 		}
 		return
