@@ -51,7 +51,7 @@ var Data embed.FS
 // Vector is a vector
 type Vector struct {
 	Vector [256]float32
-	Symbol byte
+	Symbol State
 }
 
 // Statistics are the per symbol statistics
@@ -60,11 +60,13 @@ type Statistics struct {
 	Average    [256]float32
 	Covariance [256][256]float32
 	A          [256][256]float32
-	AI         [256][256]float32
 }
 
+// State is a markov state
+type State [2]byte
+
 // Set is a set of statistics
-type Set []Statistics
+type Set map[State]Statistics
 
 func (s Set) Calculate() {
 	file, err := Data.Open("books/10.txt.utf-8.bz2")
@@ -81,26 +83,31 @@ func (s Set) Calculate() {
 	vectors := make([]Vector, len(data))
 	m := NewMixer()
 	m.Add(0)
-	for i, v := range data {
+	for i, v := range data[:len(data)-1] {
+		state := [2]byte{v, data[i+1]}
+		ss := s[state]
 		m.Mix(&vectors[i].Vector)
-		s[v].Count++
+		ss.Count++
 		for j, vv := range vectors[i].Vector {
-			s[v].Average[j] += vv
+			ss.Average[j] += vv
 		}
-		vectors[i].Symbol = v
+		vectors[i].Symbol = state
+		s[state] = ss
 		m.Add(v)
 	}
 	for i := range s {
-		count := float32(s[i].Count)
+		si := s[i]
+		count := float32(si.Count)
 		if count == 0 {
 			continue
 		}
-		for j := range s[i].Average {
-			s[i].Average[j] /= count
+		for j := range si.Average {
+			si.Average[j] /= count
 		}
+		s[i] = si
 	}
 	for _, vector := range vectors {
-		stats := &s[vector.Symbol]
+		stats := s[vector.Symbol]
 		for i, v := range vector.Vector {
 			for ii, vv := range vector.Vector {
 				diff1 := stats.Average[i] - v
@@ -108,9 +115,10 @@ func (s Set) Calculate() {
 				stats.Covariance[i][ii] += diff1 * diff2
 			}
 		}
+		s[vector.Symbol] = stats
 	}
 	for k := range s {
-		stats := &s[k]
+		stats := s[k]
 		count := float32(stats.Count)
 		if count == 0 {
 			continue
@@ -120,6 +128,7 @@ func (s Set) Calculate() {
 				stats.Covariance[i][j] = stats.Covariance[i][j] / count
 			}
 		}
+		s[k] = stats
 	}
 }
 
@@ -128,8 +137,6 @@ var (
 	FlagCheck = flag.String("check", "", "check a model")
 	// FlagInfer infers text from a query
 	FlagInfer = flag.String("infer", "", "infer text based on a model")
-	// FlagInfers sample based infer
-	FlagInfers = flag.String("infers", "", "infer text based on a model using samples")
 	// FlagQuery is the query
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query")
 )
@@ -154,29 +161,19 @@ func main() {
 			if set[i].Count == 0 {
 				continue
 			}
+			cov := NewMatrix(256, 256)
+			for r := 0; r < cov.Rows; r++ {
+				for c := 0; c < cov.Cols; c++ {
+					cov.Data = append(cov.Data, set[i].Covariance[r][c])
+				}
+			}
 			a := NewMatrix(256, 256)
 			for r := 0; r < a.Rows; r++ {
 				for c := 0; c < a.Cols; c++ {
 					a.Data = append(a.Data, set[i].A[r][c])
 				}
 			}
-			ai := NewMatrix(256, 256)
-			for r := 0; r < ai.Rows; r++ {
-				for c := 0; c < ai.Cols; c++ {
-					ai.Data = append(ai.Data, set[i].AI[r][c])
-				}
-			}
-			ii := NewMatrix(256, 256)
-			for r := 0; r < ii.Rows; r++ {
-				for c := 0; c < ii.Cols; c++ {
-					if r == c {
-						ii.Data = append(ii.Data, 1)
-					} else {
-						ii.Data = append(ii.Data, 0)
-					}
-				}
-			}
-			diff := ai.MulT(a).Sub(ii)
+			diff := a.MulT(a).Sub(cov)
 			sum := float32(0.0)
 			for _, v := range diff.Data {
 				if v < 0 {
@@ -190,6 +187,8 @@ func main() {
 		fmt.Println("total", total)
 		return
 	} else if *FlagInfer != "" {
+		rng := rand.New(rand.NewSource(1))
+
 		var set Set
 		input, err := os.Open(*FlagInfer)
 		if err != nil {
@@ -207,68 +206,15 @@ func main() {
 		}
 
 		for s := 0; s < 33; s++ {
-			var vector [256]float32
-			m.Mix(&vector)
-			vec := NewMatrix(256, 1)
-			vec.Data = append(vec.Data, vector[:]...)
-			min, symbol := float32(math.MaxFloat32), 0
-			for i := range set {
-				if set[i].Count == 0 {
-					continue
-				}
-				u := NewMatrix(256, 1)
-				for _, v := range set[i].Average {
-					u.Data = append(u.Data, v)
-				}
-				ai := NewMatrix(256, 256)
-				for r := 0; r < ai.Rows; r++ {
-					for c := 0; c < ai.Cols; c++ {
-						ai.Data = append(ai.Data, set[i].AI[r][c])
-					}
-				}
-				diff := ai.MulT(vec.Sub(u))
-				sum := float32(0.0)
-				for _, v := range diff.Data {
-					if v < 0 {
-						v = -v
-					}
-					sum += v
-				}
-				if sum < min {
-					min, symbol = sum, i
-				}
-			}
-			fmt.Printf("%f %d %c\n", min, symbol, byte(symbol))
-			m.Add(byte(symbol))
-		}
-		return
-	} else if *FlagInfers != "" {
-		rng := rand.New(rand.NewSource(1))
-
-		var set Set
-		input, err := os.Open(*FlagInfers)
-		if err != nil {
-			panic(err)
-		}
-		decoder := gob.NewDecoder(input)
-		err = decoder.Decode(&set)
-		if err != nil {
-			panic(err)
-		}
-
-		m := NewMixer()
-		for _, v := range []byte(*FlagQuery) {
-			m.Add(v)
-		}
-
-		for s := 0; s < 33; s++ {
 			var samples [256]float32
 			var vector [256]float32
+			var counts [256]float32
 			m.Mix(&vector)
-			for i := range set[:128] {
-				if set[i].Count == 0 {
+			for i := range set {
+				if set[i].Count == 0 || i[0] >= 128 {
 					continue
 				}
+				counts[i[0]]++
 				u := NewMatrix(256, 1)
 				for _, v := range set[i].Average {
 					u.Data = append(u.Data, v)
@@ -288,7 +234,7 @@ func main() {
 					}
 					vectors[j] = a.MulT(vec).Add(u)
 					cs := CS(vector[:], vectors[j].Data)
-					samples[i] += cs
+					samples[i[0]] += cs
 				}
 				/*graph := pagerank.NewGraph()
 				for a := range vectors {
@@ -316,6 +262,9 @@ func main() {
 
 			}
 			sum := float32(0.0)
+			for i := range samples {
+				samples[i] /= counts[i]
+			}
 			for _, v := range samples {
 				sum += v
 			}
@@ -343,11 +292,11 @@ func main() {
 	}
 
 	rng := rand.New(rand.NewSource(1))
-	statistics := make(Set, 256)
+	statistics := make(Set)
 	statistics.Calculate()
 
 	for s := range statistics {
-		stats := &statistics[s]
+		stats := statistics[s]
 		if stats.Count == 0 {
 			continue
 		}
@@ -463,139 +412,7 @@ func main() {
 				}
 			}
 		}
-
-		{
-			others := tf32.NewSet()
-			others.Add("A", 256, 256)
-			others.Add("I", 256, 256)
-			A := others.ByName["A"]
-			I := others.ByName["I"]
-			for i := range stats.A {
-				for j := range stats.A[i] {
-					A.X = append(A.X, stats.A[i][j])
-					if i == j {
-						I.X = append(I.X, 1)
-					} else {
-						I.X = append(I.X, 0)
-					}
-				}
-			}
-
-			min, best := float32(math.MaxFloat32), tf32.Set{}
-			for t := 0; t < 32; t++ {
-				set := tf32.NewSet()
-				set.Add("AI", 256, 256)
-				for i := range set.Weights {
-					w := set.Weights[i]
-					if strings.HasPrefix(w.N, "b") {
-						w.X = w.X[:cap(w.X)]
-						w.States = make([][]float32, StateTotal)
-						for i := range w.States {
-							w.States[i] = make([]float32, len(w.X))
-						}
-						continue
-					}
-					factor := math.Sqrt(2.0 / float64(w.S[0]))
-					for i := 0; i < cap(w.X); i++ {
-						w.X = append(w.X, float32(rng.NormFloat64()*factor))
-					}
-					w.States = make([][]float32, StateTotal)
-					for i := range w.States {
-						w.States[i] = make([]float32, len(w.X))
-					}
-				}
-
-				loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("AI"), others.Get("A"))))
-
-				set.Zero()
-				others.Zero()
-				cost := tf32.Gradient(loss).X[0]
-
-				if cost < min {
-					min, best = cost, set
-				}
-			}
-
-			set := best
-
-			loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("AI"), others.Get("A"))))
-
-			points := make(plotter.XYs, 0, 8)
-			for i := 0; i < 8*1024; i++ {
-				pow := func(x float32) float32 {
-					y := math.Pow(float64(x), float64(i+1))
-					if math.IsNaN(y) || math.IsInf(y, 0) {
-						return 0
-					}
-					return float32(y)
-				}
-
-				set.Zero()
-				others.Zero()
-				cost := tf32.Gradient(loss).X[0]
-				if math.IsNaN(float64(cost)) || math.IsInf(float64(cost), 0) {
-					fmt.Println(i, cost)
-					break
-				}
-
-				norm := float32(0.0)
-				for _, p := range set.Weights {
-					for _, d := range p.D {
-						norm += d * d
-					}
-				}
-				norm = sqrt(norm)
-				b1, b2 := pow(B1), pow(B2)
-				scaling := float32(1.0)
-				if norm > 1 {
-					scaling = 1 / norm
-				}
-				for _, w := range set.Weights {
-					for l, d := range w.D {
-						g := d * scaling
-						m := B1*w.States[StateM][l] + (1-B1)*g
-						v := B2*w.States[StateV][l] + (1-B2)*g*g
-						w.States[StateM][l] = m
-						w.States[StateV][l] = v
-						mhat := m / (1 - b1)
-						vhat := v / (1 - b2)
-						if vhat < 0 {
-							vhat = 0
-						}
-						w.X[l] -= Eta1 * mhat / (sqrt(vhat) + 1e-8)
-					}
-				}
-				points = append(points, plotter.XY{X: float64(i), Y: float64(cost)})
-				fmt.Println(i, cost)
-			}
-
-			p := plot.New()
-
-			p.Title.Text = "epochs vs cost"
-			p.X.Label.Text = "epochs"
-			p.Y.Label.Text = "cost"
-
-			scatter, err := plotter.NewScatter(points)
-			if err != nil {
-				panic(err)
-			}
-			scatter.GlyphStyle.Radius = vg.Length(1)
-			scatter.GlyphStyle.Shape = draw.CircleGlyph{}
-			p.Add(scatter)
-
-			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("epochs/epochs%d_AI.png", s))
-			if err != nil {
-				panic(err)
-			}
-
-			index := 0
-			for r := range stats.AI {
-				for c := range stats.AI {
-					stats.AI[r][c] = set.ByName["AI"].X[index]
-					index++
-				}
-			}
-		}
+		statistics[s] = stats
 	}
 
 	output, err := os.Create("data.bin")
