@@ -278,6 +278,7 @@ func main() {
 						a.Data = append(a.Data, set[i].A[r][c])
 					}
 				}
+				rng := rand.New(rand.NewSource(1))
 				for j := 0; j < 512; j++ {
 					vec := NewMatrix(256, 1)
 					for k := 0; k < vec.Cols; k++ {
