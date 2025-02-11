@@ -263,6 +263,9 @@ func main() {
 			}
 			sum := float32(0.0)
 			for i := range samples {
+				if counts[i] == 0 {
+					continue
+				}
 				samples[i] /= counts[i]
 			}
 			for _, v := range samples {
